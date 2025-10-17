@@ -1,0 +1,171 @@
+--// Player Highlighter Script with Wallhack & Persistent Highlights & Minimize Toggle
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local RunService = game:GetService("RunService")
+local CoreGui = game:GetService("CoreGui")
+
+-- Remove previous GUI if exists
+if CoreGui:FindFirstChild("PlayerHighlighterGUI") then
+    CoreGui.PlayerHighlighterGUI:Destroy()
+end
+
+-- Create ScreenGui
+local gui = Instance.new("ScreenGui")
+gui.Name = "PlayerHighlighterGUI"
+gui.Parent = CoreGui
+
+-- Frame
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 240, 0, 120)
+frame.Position = UDim2.new(0, 20, 0, 80)
+frame.BackgroundColor3 = Color3.fromRGB(40,40,40)
+frame.BorderSizePixel = 0
+frame.Parent = gui
+
+-- Title
+local title = Instance.new("TextLabel")
+title.Text = "Player Highlighter"
+title.Size = UDim2.new(1,0,0,28)
+title.BackgroundTransparency = 1
+title.TextColor3 = Color3.new(1,1,1)
+title.Font = Enum.Font.SourceSansBold
+title.TextSize = 22
+title.Parent = frame
+
+-- Minimize Button
+local minimize = Instance.new("TextButton")
+minimize.Text = "-"
+minimize.Size = UDim2.new(0,28,0,28)
+minimize.Position = UDim2.new(1,-30,0,0)
+minimize.BackgroundColor3 = Color3.fromRGB(80,80,80)
+minimize.TextColor3 = Color3.new(1,1,1)
+minimize.Font = Enum.Font.SourceSansBold
+minimize.TextSize = 24
+minimize.Parent = frame
+
+-- Range slider
+local rangeLabel = Instance.new("TextLabel")
+rangeLabel.Text = "Range: 50"
+rangeLabel.Size = UDim2.new(0,220,0,24)
+rangeLabel.Position = UDim2.new(0,10,0,40)
+rangeLabel.BackgroundTransparency = 1
+rangeLabel.TextColor3 = Color3.new(1,1,1)
+rangeLabel.Font = Enum.Font.SourceSans
+rangeLabel.TextSize = 18
+rangeLabel.Parent = frame
+
+local slider = Instance.new("TextButton")
+slider.Size = UDim2.new(0, 220, 0, 20)
+slider.Position = UDim2.new(0, 10, 0, 68)
+slider.BackgroundColor3 = Color3.fromRGB(100,100,100)
+slider.Text = ""
+slider.Parent = frame
+
+local sliderKnob = Instance.new("Frame")
+sliderKnob.Size = UDim2.new(0, 14, 0, 20)
+sliderKnob.Position = UDim2.new(0, 0, 0, 0)
+sliderKnob.BackgroundColor3 = Color3.fromRGB(255,0,0)
+sliderKnob.BorderSizePixel = 0
+sliderKnob.Parent = slider
+
+local range = 50
+local minRange, maxRange = 10, 250
+
+-- Dragging variables
+local dragging = false
+
+sliderKnob.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+    end
+end)
+sliderKnob.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = false
+    end
+end)
+
+slider.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+    end
+end)
+slider.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = false
+    end
+end)
+
+game:GetService("UserInputService").InputChanged:Connect(function(input)
+    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local relX = math.clamp(input.Position.X - slider.AbsolutePosition.X, 0, slider.AbsoluteSize.X)
+        sliderKnob.Position = UDim2.new(0, relX - sliderKnob.Size.X.Offset/2, 0, 0)
+        range = math.floor(minRange + ((relX / slider.AbsoluteSize.X) * (maxRange - minRange)))
+        rangeLabel.Text = "Range: " .. range
+    end
+end)
+
+-- Highlight logic
+local highlights = {}
+local highlightingEnabled = true
+
+function clearHighlights()
+    for plr,hl in pairs(highlights) do
+        if hl and hl.Parent then hl:Destroy() end
+    end
+    table.clear(highlights)
+end
+
+function updateHighlights()
+    if not highlightingEnabled then
+        clearHighlights()
+        return
+    end
+
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+    local pos = char.HumanoidRootPart.Position
+
+    -- Remove outdated highlights
+    for plr,hl in pairs(highlights) do
+        local valid = plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
+        local dist = valid and (plr.Character.HumanoidRootPart.Position - pos).Magnitude or math.huge
+        if not valid or dist > range then
+            if hl and hl.Parent then hl:Destroy() end
+            highlights[plr] = nil
+        end
+    end
+
+    -- Add/update highlights for players in range
+    for _,plr in pairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+            local dist = (plr.Character.HumanoidRootPart.Position - pos).Magnitude
+            if dist <= range then
+                if not highlights[plr] or not highlights[plr].Parent then
+                    local hl = Instance.new("Highlight")
+                    hl.Parent = plr.Character
+                    hl.FillColor = Color3.fromRGB(255,0,0)
+                    hl.OutlineColor = Color3.fromRGB(255,100,100)
+                    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop -- Wallhack!
+                    highlights[plr] = hl
+                end
+            end
+        end
+    end
+end
+
+-- Minimize logic (toggle highlight system)
+local minimized = false
+minimize.MouseButton1Click:Connect(function()
+    minimized = not minimized
+    highlightingEnabled = not minimized
+    for _,v in pairs(frame:GetChildren()) do
+        if v ~= title and v ~= minimize then v.Visible = not minimized end
+    end
+    if minimized then
+        clearHighlights()
+    end
+end)
+
+-- Update highlights every frame
+RunService.RenderStepped:Connect(updateHighlights)
