@@ -1,365 +1,123 @@
--- Player Highlighter (developer/debug version; NO wallhack)
--- Use only in places you own or for learning. This version respects occlusion and
--- is intended as a debugging/developer aid.
-
+--// Player Highlighter Script with Wallhack & Persistent Highlights & Minimize Toggle
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
-
 local LocalPlayer = Players.LocalPlayer
-local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+local RunService = game:GetService("RunService")
+local CoreGui = game:GetService("CoreGui")
+local UserInputService = game:GetService("UserInputService") -- For key press detection
 
--- Remove previous GUI if exists (in PlayerGui)
-local EXISTING = PlayerGui:FindFirstChild("PlayerHighlighterGUI")
-if EXISTING then EXISTING:Destroy() end
+-- Remove previous GUI if exists
+if CoreGui:FindFirstChild("PlayerHighlighterGUI") then
+    CoreGui.PlayerHighlighterGUI:Destroy()
+end
 
--- UI creation
+-- Create ScreenGui
 local gui = Instance.new("ScreenGui")
 gui.Name = "PlayerHighlighterGUI"
-gui.Parent = PlayerGui
-gui.ResetOnSpawn = false
+gui.Parent = CoreGui
 
+-- Frame
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 260, 0, 140)
+frame.Size = UDim2.new(0, 240, 0, 120)
 frame.Position = UDim2.new(0, 20, 0, 80)
 frame.BackgroundColor3 = Color3.fromRGB(40,40,40)
 frame.BorderSizePixel = 0
 frame.Parent = gui
 
+-- Title
 local title = Instance.new("TextLabel")
-title.Text = "Player Highlighter (Debug)"
-title.Size = UDim2.new(1, -16, 0, 28)
-title.Position = UDim2.new(0, 8, 0, 0)
+title.Text = "Player Highlighter"
+title.Size = UDim2.new(1,0,0,28)
 title.BackgroundTransparency = 1
 title.TextColor3 = Color3.new(1,1,1)
 title.Font = Enum.Font.SourceSansBold
-title.TextSize = 18
+title.TextSize = 22
 title.Parent = frame
 
--- Instruction label
-local instr = Instance.new("TextLabel")
-instr.Text = "Press Delete to minimize"
-instr.Size = UDim2.new(1, -16, 0, 18)
-instr.Position = UDim2.new(0, 8, 0, 28)
-instr.BackgroundTransparency = 1
-instr.TextColor3 = Color3.fromRGB(200,200,200)
-instr.Font = Enum.Font.SourceSans
-instr.TextSize = 14
-instr.TextXAlignment = Enum.TextXAlignment.Left
-instr.Parent = frame
+-- Minimize Button
+local minimize = Instance.new("TextButton")
+minimize.Text = "-"
+minimize.Size = UDim2.new(0,28,0,28)
+minimize.Position = UDim2.new(1,-30,0,0)
+minimize.BackgroundColor3 = Color3.fromRGB(80,80,80)
+minimize.TextColor3 = Color3.new(1,1,1)
+minimize.Font = Enum.Font.SourceSansBold
+minimize.TextSize = 24
+minimize.Parent = frame
 
--- Range label + slider
+-- Range slider
 local rangeLabel = Instance.new("TextLabel")
 rangeLabel.Text = "Range: 50"
-rangeLabel.Size = UDim2.new(0,220,0,20)
-rangeLabel.Position = UDim2.new(0,10,0,48)
+rangeLabel.Size = UDim2.new(0,220,0,24)
+rangeLabel.Position = UDim2.new(0,10,0,40)
 rangeLabel.BackgroundTransparency = 1
 rangeLabel.TextColor3 = Color3.new(1,1,1)
 rangeLabel.Font = Enum.Font.SourceSans
-rangeLabel.TextSize = 16
-rangeLabel.TextXAlignment = Enum.TextXAlignment.Left
+rangeLabel.TextSize = 18
 rangeLabel.Parent = frame
 
-local slider = Instance.new("Frame")
-slider.Size = UDim2.new(0, 220, 0, 12)
-slider.Position = UDim2.new(0, 10, 0, 72)
+local slider = Instance.new("TextButton")
+slider.Size = UDim2.new(0, 220, 0, 20)
+slider.Position = UDim2.new(0, 10, 0, 68)
 slider.BackgroundColor3 = Color3.fromRGB(100,100,100)
-slider.BorderSizePixel = 0
+slider.Text = ""
 slider.Parent = frame
 
 local sliderKnob = Instance.new("Frame")
-sliderKnob.Size = UDim2.new(0, 12, 0, 12)
+sliderKnob.Size = UDim2.new(0, 14, 0, 20)
 sliderKnob.Position = UDim2.new(0, 0, 0, 0)
-sliderKnob.BackgroundColor3 = Color3.fromRGB(200,50,50)
+sliderKnob.BackgroundColor3 = Color3.fromRGB(255,0,0)
 sliderKnob.BorderSizePixel = 0
 sliderKnob.Parent = slider
 
--- Buttons: toggle and color cycle (team button removed permanently)
-local toggleBtn = Instance.new("TextButton")
-toggleBtn.Text = "Enabled"
-toggleBtn.Size = UDim2.new(0, 100, 0, 24)
-toggleBtn.Position = UDim2.new(0, 10, 0, 96)
-toggleBtn.BackgroundColor3 = Color3.fromRGB(70,130,70)
-toggleBtn.TextColor3 = Color3.new(1,1,1)
-toggleBtn.Font = Enum.Font.SourceSans
-toggleBtn.TextSize = 16
-toggleBtn.Parent = frame
+local range = 50
+local minRange, maxRange = 10, 250
 
-local colorBtn = Instance.new("TextButton")
-colorBtn.Text = "Color: Red"
-colorBtn.Size = UDim2.new(0, 120, 0, 20)
-colorBtn.Position = UDim2.new(0, 130, 0, 96)
-colorBtn.BackgroundColor3 = Color3.fromRGB(100,100,100)
-colorBtn.TextColor3 = Color3.new(1,1,1)
-colorBtn.Font = Enum.Font.SourceSans
-colorBtn.TextSize = 14
-colorBtn.Parent = frame
-
--- Draggable window (by title or frame) but blocked while interacting with controls
-local draggingWindow = false
-local dragStart, startPos
-local blockWindowDrag = false -- when true, window drag won't start or continue
-
-local function beginDrag(input)
-    if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
-    if blockWindowDrag then return end
-    draggingWindow = true
-    dragStart = input.Position
-    startPos = frame.Position
-    input.Changed:Connect(function()
-        if input.UserInputState == Enum.UserInputState.End then
-            draggingWindow = false
-        end
-    end)
-end
-
-title.InputBegan:Connect(beginDrag)
-frame.InputBegan:Connect(beginDrag)
-
-UserInputService.InputChanged:Connect(function(input)
-    if draggingWindow and not blockWindowDrag and input.UserInputType == Enum.UserInputType.MouseMovement then
-        local delta = input.Position - dragStart
-        frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-    end
-end)
-
--- Store original position for animations
-local originalPos = frame.Position
-local offscreenPos = UDim2.new(originalPos.X.Scale, originalPos.X.Offset, originalPos.Y.Scale, originalPos.Y.Offset + 220)
-
--- Settings (session-persistent via Attributes)
-local defaults = {
-    Range = 50,
-    Enabled = true,
-    ColorIndex = 1, -- 1 = red, 2 = green, 3 = blue
-}
-if LocalPlayer:GetAttribute("Highlighter_Range") == nil then LocalPlayer:SetAttribute("Highlighter_Range", defaults.Range) end
-if LocalPlayer:GetAttribute("Highlighter_Enabled") == nil then LocalPlayer:SetAttribute("Highlighter_Enabled", defaults.Enabled) end
-if LocalPlayer:GetAttribute("Highlighter_ColorIndex") == nil then LocalPlayer:SetAttribute("Highlighter_ColorIndex", defaults.ColorIndex) end
-
-local range = LocalPlayer:GetAttribute("Highlighter_Range")
-local highlightingEnabled = LocalPlayer:GetAttribute("Highlighter_Enabled")
-local colorIndex = LocalPlayer:GetAttribute("Highlighter_ColorIndex")
-
-local colors = {
-    {Fill = Color3.fromRGB(255,80,80), Outline = Color3.fromRGB(200,40,40), Name = "Red"},
-    {Fill = Color3.fromRGB(80,255,120), Outline = Color3.fromRGB(40,200,80), Name = "Green"},
-    {Fill = Color3.fromRGB(80,140,255), Outline = Color3.fromRGB(40,100,200), Name = "Blue"},
-}
-
--- Range bounds (min and updated max)
-local minRange, maxRange = 10, 1000 -- max changed to 1000 as requested
-
--- Apply UI initial states
-rangeLabel.Text = "Range: " .. tostring(range)
-toggleBtn.Text = highlightingEnabled and "Enabled" or "Disabled"
-toggleBtn.BackgroundColor3 = highlightingEnabled and Color3.fromRGB(70,130,70) or Color3.fromRGB(120,40,40)
-colorBtn.Text = "Color: " .. colors[colorIndex].Name
-
--- Utility: set slider knob from a given range value (uses actual slider width)
-local function updateSliderKnobFromRange()
-    local sliderWidth = slider.AbsoluteSize.X
-    if sliderWidth <= 0 then return end
-    local t = (math.clamp(range, minRange, maxRange) - minRange) / (maxRange - minRange)
-    local relX = t * sliderWidth
-    sliderKnob.Position = UDim2.new(0, relX - sliderKnob.Size.X.Offset/2, 0, 0)
-end
-
-if slider.AbsoluteSize.X <= 0 then
-    local conn
-    conn = slider:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-        if slider.AbsoluteSize.X > 0 then
-            updateSliderKnobFromRange()
-            conn:Disconnect()
-        end
-    end)
-else
-    updateSliderKnobFromRange()
-end
-
--- Block window drag while interacting with controls
-local function blockOnInputBegan(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        blockWindowDrag = true
-    end
-end
-local function unblockOnInputEnded(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        blockWindowDrag = false
-    end
-end
-
--- Connect blocking for interactive controls
-slider.InputBegan:Connect(blockOnInputBegan)
-slider.InputEnded:Connect(unblockOnInputEnded)
-sliderKnob.InputBegan:Connect(blockOnInputBegan)
-sliderKnob.InputEnded:Connect(unblockOnInputEnded)
-toggleBtn.InputBegan:Connect(blockOnInputBegan)
-toggleBtn.InputEnded:Connect(unblockOnInputEnded)
-colorBtn.InputBegan:Connect(blockOnInputBegan)
-colorBtn.InputEnded:Connect(unblockOnInputEnded)
-rangeLabel.InputBegan:Connect(blockOnInputBegan)
-rangeLabel.InputEnded:Connect(unblockOnInputEnded)
-instr.InputBegan:Connect(blockOnInputBegan)
-instr.InputEnded:Connect(unblockOnInputEnded)
-
--- Slider interaction
-local draggingKnob = false
-local function setRangeFromRelX(relX)
-    local sliderWidth = slider.AbsoluteSize.X
-    if sliderWidth <= 0 then return end
-    relX = math.clamp(relX, 0, sliderWidth)
-    sliderKnob.Position = UDim2.new(0, relX - sliderKnob.Size.X.Offset/2, 0, 0)
-    range = math.floor(minRange + ((relX / sliderWidth) * (maxRange - minRange)))
-    rangeLabel.Text = "Range: " .. tostring(range)
-    LocalPlayer:SetAttribute("Highlighter_Range", range)
-end
+-- Dragging variables
+local dragging = false
 
 sliderKnob.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        draggingKnob = true
+        dragging = true
     end
 end)
 sliderKnob.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        draggingKnob = false
+        dragging = false
     end
 end)
+
 slider.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        draggingKnob = true
-        local relX = input.Position.X - slider.AbsolutePosition.X
-        setRangeFromRelX(relX)
+        dragging = true
     end
 end)
 slider.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        draggingKnob = false
-    end
-end)
-UserInputService.InputChanged:Connect(function(input)
-    if draggingKnob and input.UserInputType == Enum.UserInputType.MouseMovement then
-        local relX = input.Position.X - slider.AbsolutePosition.X
-        setRangeFromRelX(relX)
+        dragging = false
     end
 end)
 
--- Toggle & color buttons
-toggleBtn.MouseButton1Click:Connect(function()
-    highlightingEnabled = not highlightingEnabled
-    LocalPlayer:SetAttribute("Highlighter_Enabled", highlightingEnabled)
-    toggleBtn.Text = highlightingEnabled and "Enabled" or "Disabled"
-    toggleBtn.BackgroundColor3 = highlightingEnabled and Color3.fromRGB(70,130,70) or Color3.fromRGB(120,40,40)
+game:GetService("UserInputService").InputChanged:Connect(function(input)
+    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local relX = math.clamp(input.Position.X - slider.AbsolutePosition.X, 0, slider.AbsoluteSize.X)
+        sliderKnob.Position = UDim2.new(0, relX - sliderKnob.Size.X.Offset/2, 0, 0)
+        range = math.floor(minRange + ((relX / slider.AbsoluteSize.X) * (maxRange - minRange)))
+        rangeLabel.Text = "Range: " .. range
+    end
 end)
 
-colorBtn.MouseButton1Click:Connect(function()
-    colorIndex = colorIndex + 1
-    if colorIndex > #colors then colorIndex = 1 end
-    LocalPlayer:SetAttribute("Highlighter_ColorIndex", colorIndex)
-    colorBtn.Text = "Color: " .. colors[colorIndex].Name
-end)
-
--- Highlight management
+-- Highlight logic
 local highlights = {}
-local function clearHighlights()
+local highlightingEnabled = true
+
+function clearHighlights()
     for plr,hl in pairs(highlights) do
         if hl and hl.Parent then hl:Destroy() end
     end
-    highlights = {}
+    table.clear(highlights)
 end
 
-local function createHighlightForPlayer(plr)
-    local hl = Instance.new("Highlight")
-    hl.Parent = plr.Character
-    hl.FillColor = colors[colorIndex].Fill
-    hl.OutlineColor = colors[colorIndex].Outline
-    hl.DepthMode = Enum.HighlightDepthMode.Occluded -- respects walls (NO wallhack)
-    return hl
-end
-
--- Controller for running/highlighting
-local runEnabled = true -- if false, update loop will not update highlights
-local function enableRunning(enable)
-    runEnabled = enable
-    if not runEnabled then
-        -- fully stop highlighting and clear existing
-        clearHighlights()
-    end
-end
-
--- Minimize state machine:
--- 0 = visible & active
--- 1 = hidden but active (functions continue)
--- 2 = hidden & disabled (functions stopped)
-local minimizeState = 0
-
-local tweenInfo = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-
-local function animateHideThenHideVisible(finalVisible)
-    -- slide to offscreen and fade background, then set Visible flag per finalVisible
-    local targetPos = offscreenPos
-    local t1 = TweenService:Create(frame, tweenInfo, {Position = targetPos, BackgroundTransparency = 1})
-    t1:Play()
-    t1.Completed:Wait()
-    frame.Visible = finalVisible
-    -- restore transparency for next show
-    frame.BackgroundTransparency = 0
-end
-
-local function animateShow()
-    -- ensure visible then slide in from offscreen
-    frame.Position = offscreenPos
-    frame.Visible = true
-    frame.BackgroundTransparency = 1
-    local t = TweenService:Create(frame, tweenInfo, {Position = originalPos, BackgroundTransparency = 0})
-    t:Play()
-end
-
-local function setMinimizeState(state)
-    minimizeState = state % 3
-    if minimizeState == 0 then
-        -- visible & active
-        animateShow()
-        enableRunning(true)
-        instr.Text = "Press Delete to minimize (hide → disable → show)"
-    elseif minimizeState == 1 then
-        -- hidden but active
-        -- animate hide and keep functions running
-        animateHideThenHideVisible(false)
-        enableRunning(true)
-        instr.Text = "Press Delete to disable (next press)"
-    elseif minimizeState == 2 then
-        -- hidden and disabled
-        animateHideThenHideVisible(false)
-        enableRunning(false) -- stops highlighting and clears existing highlights
-        instr.Text = "Press Delete to show (next press)"
-    end
-end
-
--- Keybinds: M toggles highlights, Delete cycles minimize state
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed then return end
-    if input.KeyCode == Enum.KeyCode.M then
-        highlightingEnabled = not highlightingEnabled
-        LocalPlayer:SetAttribute("Highlighter_Enabled", highlightingEnabled)
-        toggleBtn.Text = highlightingEnabled and "Enabled" or "Disabled"
-        toggleBtn.BackgroundColor3 = highlightingEnabled and Color3.fromRGB(70,130,70) or Color3.fromRGB(120,40,40)
-    elseif input.KeyCode == Enum.KeyCode.Delete then
-        setMinimizeState((minimizeState + 1) % 3)
-    end
-end)
-
--- Main update (throttled)
-local updateAccumulator = 0
-local updateInterval = 0.12 -- seconds between updates (throttle)
-
-local function updateHighlights(dt)
-    if not runEnabled then return end -- fully disabled state
-    highlightingEnabled = LocalPlayer:GetAttribute("Highlighter_Enabled")
-    range = LocalPlayer:GetAttribute("Highlighter_Range") or range
-    colorIndex = LocalPlayer:GetAttribute("Highlighter_ColorIndex") or colorIndex
-
+function updateHighlights()
     if not highlightingEnabled then
         clearHighlights()
         return
@@ -385,34 +143,43 @@ local function updateHighlights(dt)
             local dist = (plr.Character.HumanoidRootPart.Position - pos).Magnitude
             if dist <= range then
                 if not highlights[plr] or not highlights[plr].Parent then
-                    local hl = createHighlightForPlayer(plr)
+                    local hl = Instance.new("Highlight")
+                    hl.Parent = plr.Character
+                    hl.FillColor = Color3.fromRGB(255,0,0)
+                    hl.OutlineColor = Color3.fromRGB(255,100,100)
+                    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop -- Wallhack!
                     highlights[plr] = hl
-                else
-                    local hl = highlights[plr]
-                    hl.FillColor = colors[colorIndex].Fill
-                    hl.OutlineColor = colors[colorIndex].Outline
-                    hl.DepthMode = Enum.HighlightDepthMode.Occluded
                 end
             end
         end
     end
 end
 
-RunService.Heartbeat:Connect(function(dt)
-    updateAccumulator = updateAccumulator + dt
-    if updateAccumulator >= updateInterval then
-        updateAccumulator = 0
-        updateHighlights(dt)
-        updateSliderKnobFromRange()
+-- Minimize logic (toggle highlight system)
+local minimized = false
+minimize.MouseButton1Click:Connect(function()
+    minimized = not minimized
+    highlightingEnabled = not minimized
+    for _,v in pairs(frame:GetChildren()) do
+        if v ~= title and v ~= minimize then v.Visible = not minimized end
+    end
+    if minimized then
+        clearHighlights()
     end
 end)
 
--- Cleanup on character removal
-LocalPlayer.CharacterRemoving:Connect(function()
-    clearHighlights()
+-- Delete key minimize/maximize
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.Delete then
+        minimized = not minimized
+        frame.Visible = not minimized
+        highlightingEnabled = not minimized
+        if minimized then
+            clearHighlights()
+        end
+    end
 end)
 
--- Ensure initial state (visible & active)
-setMinimizeState(0)
-
--- End of script
+-- Update highlights every frame
+RunService.RenderStepped:Connect(updateHighlights)
