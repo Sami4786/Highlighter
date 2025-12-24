@@ -3,7 +3,7 @@ local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local RunService = game:GetService("RunService")
 local CoreGui = game:GetService("CoreGui")
-local UserInputService = game:GetService("UserInputService") -- For key press detection
+local UserInputService = game:GetService("UserInputService") -- For key press & dragging
 
 -- Remove previous GUI if exists
 if CoreGui:FindFirstChild("PlayerHighlighterGUI") then
@@ -70,35 +70,35 @@ sliderKnob.BorderSizePixel = 0
 sliderKnob.Parent = slider
 
 local range = 50
-local minRange, maxRange = 10, 250
+local minRange, maxRange = 10, 1000 -- maxRange increased to 1000 as requested
 
--- Dragging variables
-local dragging = false
+-- Dragging variables for slider
+local sliderDragging = false
 
 sliderKnob.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = true
+        sliderDragging = true
     end
 end)
 sliderKnob.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = false
+        sliderDragging = false
     end
 end)
 
 slider.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = true
+        sliderDragging = true
     end
 end)
 slider.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = false
+        sliderDragging = false
     end
 end)
 
-game:GetService("UserInputService").InputChanged:Connect(function(input)
-    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+UserInputService.InputChanged:Connect(function(input)
+    if sliderDragging and input.UserInputType == Enum.UserInputType.MouseMovement then
         local relX = math.clamp(input.Position.X - slider.AbsolutePosition.X, 0, slider.AbsoluteSize.X)
         sliderKnob.Position = UDim2.new(0, relX - sliderKnob.Size.X.Offset/2, 0, 0)
         range = math.floor(minRange + ((relX / slider.AbsoluteSize.X) * (maxRange - minRange)))
@@ -168,7 +168,7 @@ minimize.MouseButton1Click:Connect(function()
     end
 end)
 
--- Delete key minimize/maximize
+-- Delete key minimize/maximize (keeps functions running)
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
     if input.KeyCode == Enum.KeyCode.Delete then
@@ -180,6 +180,42 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
         end
     end
 end)
+
+-- Make the main frame draggable (click+drag on the frame or title)
+local frameDragging = false
+local dragStartPos
+local frameStartPos
+
+local function beginFrameDrag(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        frameDragging = true
+        dragStartPos = input.Position
+        frameStartPos = frame.Position
+
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                frameDragging = false
+            end
+        end)
+    end
+end
+
+local function updateFrameDrag(input)
+    if frameDragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local delta = input.Position - dragStartPos
+        frame.Position = UDim2.new(
+            frameStartPos.X.Scale,
+            frameStartPos.X.Offset + delta.X,
+            frameStartPos.Y.Scale,
+            frameStartPos.Y.Offset + delta.Y
+        )
+    end
+end
+
+-- Only start dragging when clicking the frame itself or the title bar (so slider still works)
+frame.InputBegan:Connect(beginFrameDrag)
+title.InputBegan:Connect(beginFrameDrag)
+UserInputService.InputChanged:Connect(updateFrameDrag)
 
 -- Update highlights every frame
 RunService.RenderStepped:Connect(updateHighlights)
